@@ -1,13 +1,14 @@
 # MyOS Makefile
 # Builds a two-stage bootloader and kernel for x86 32-bit
 
-SHELL := C:/msys64/ucrt64/bin/sh.exe
+SHELL := C:/msys64/usr/bin/sh.exe
 
 # Toolchain
-CC = i686-w64-mingw32-gcc.exe
+CC = gcc.exe
 LD = ld.exe
 NASM = /c/msys64/ucrt64/bin/nasm.exe
 OBJCOPY = objcopy.exe
+QEMU = C:/msys64/ucrt64/bin/qemu-system-i386.exe
 
 # Directories
 BOOT_DIR = boot
@@ -47,33 +48,34 @@ ALL_KERNEL_OBJS = $(KERNEL_OBJS) $(KERNEL_ASM_OBJS)
 all: $(BUILD_DIR) $(OS_IMAGE)
 
 $(BUILD_DIR):
-	mkdir -p "$(BUILD_DIR)"
+	python -c "from pathlib import Path; Path(r'$(BUILD_DIR)').mkdir(parents=True, exist_ok=True)"
 
 # =============================================================================
 # Stage 1 Bootloader (MBR)
 # =============================================================================
-$(BUILD_DIR)/stage1.bin: $(STAGE1_SRC)
+$(BUILD_DIR)/stage1.bin: $(STAGE1_SRC) | $(BUILD_DIR)
 	$(NASM) $(NASM_FLAGS) $< -o $@
 
 # =============================================================================
 # Stage 2 Bootloader
 # =============================================================================
-$(BUILD_DIR)/stage2_entry.bin: $(STAGE2_ENTRY_SRC)
+$(BUILD_DIR)/stage2_entry.bin: $(STAGE2_ENTRY_SRC) | $(BUILD_DIR)
 	$(NASM) -f bin $< -o $@
 
-$(BUILD_DIR)/stage2.o: $(STAGE2_SRC)
-	$(CC) $(CFLAGS) -c $< -o $@ -fno-pic -fno-pie
+$(BUILD_DIR)/stage2.o: $(STAGE2_SRC) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -m32 -c $< -o $@ -fno-pic -fno-pie
 
 STAGE2_LD = stage2.ld
 
 $(BUILD_DIR)/stage2.elf: $(BUILD_DIR)/stage2.o $(STAGE2_LD)
-	$(LD) -m i386pe -T $(STAGE2_LD) -o $@ $<
+	$(LD) -m i386pe -Ttext=0x8000 -T $(STAGE2_LD) -o $@ $<
 
 $(BUILD_DIR)/stage2_c.bin: $(BUILD_DIR)/stage2.elf
-	$(OBJCOPY) -O binary $< $@
+	$(OBJCOPY) --change-section-vma .text=-0x8000 --change-section-vma .rdata=-0x8000 \
+		--change-section-vma .rodata=-0x8000 --change-section-vma .data=-0x8000 -O binary $< $@
 
 $(BUILD_DIR)/stage2.bin: $(BUILD_DIR)/stage2_entry.bin $(BUILD_DIR)/stage2_c.bin
-	cmd.exe /c copy /b $(BUILD_DIR)\stage2_entry.bin+$(BUILD_DIR)\stage2_c.bin $(BUILD_DIR)\stage2.bin > nul
+	python -c "from pathlib import Path; out=Path(r'$(BUILD_DIR)/stage2.bin'); out.write_bytes(Path(r'$(BUILD_DIR)/stage2_entry.bin').read_bytes() + Path(r'$(BUILD_DIR)/stage2_c.bin').read_bytes())"
 
 # =============================================================================
 # Kernel
@@ -85,12 +87,20 @@ $(BUILD_DIR)/%.o: $(KERNEL_DIR)/%.asm
 	$(NASM) -f win32 $< -o $@
 
 $(BUILD_DIR)/kernel.bin: $(ALL_KERNEL_OBJS)
-	$(CC) -fno-use-linker-plugin $(LDFLAGS) $^ -o $(BUILD_DIR)/kernel.exe -Wl,--image-base,0x100000 -Wl,-e,_kernel_main
+	$(CC) -m32 -fno-use-linker-plugin $(LDFLAGS) $^ -o $(BUILD_DIR)/kernel.exe -Wl,--image-base,0x100000
 	$(OBJCOPY) -O binary $(BUILD_DIR)/kernel.exe $@
 
 # =============================================================================
 # Create disk image
 # =============================================================================
+ifeq ($(OS),Windows_NT)
+$(OS_IMAGE): $(BUILD_DIR)/stage1.bin $(BUILD_DIR)/stage2.bin $(BUILD_DIR)/kernel.bin
+	python -c "from pathlib import Path; img=Path(r'$(OS_IMAGE)'); img.write_bytes(b'\x00'*10485760)"
+	python -c "from pathlib import Path; img=Path(r'$(OS_IMAGE)'); out=img.open('r+b'); out.seek(0); out.write(Path(r'$(BUILD_DIR)/stage1.bin').read_bytes()); out.close()"
+	python -c "from pathlib import Path; img=Path(r'$(OS_IMAGE)'); out=img.open('r+b'); out.seek(512); out.write(Path(r'$(BUILD_DIR)/stage2.bin').read_bytes()); out.close()"
+	python -c "from pathlib import Path; img=Path(r'$(OS_IMAGE)'); out=img.open('r+b'); out.seek(5632); out.write(Path(r'$(BUILD_DIR)/kernel.bin').read_bytes()); out.close()"
+	@echo "OS image created: $(OS_IMAGE)"
+else
 $(OS_IMAGE): $(BUILD_DIR)/stage1.bin $(BUILD_DIR)/stage2.bin $(BUILD_DIR)/kernel.bin
 	# Create a 10MB disk image
 	dd if=/dev/zero of=$(OS_IMAGE) bs=1M count=10 2>/dev/null
@@ -101,20 +111,21 @@ $(OS_IMAGE): $(BUILD_DIR)/stage1.bin $(BUILD_DIR)/stage2.bin $(BUILD_DIR)/kernel
 	# Write stage 2 at sector 1 (LBA 1)
 	dd if=$(BUILD_DIR)/stage2.bin of=$(OS_IMAGE) conv=notrunc bs=512 seek=1 2>/dev/null
 	
-	# Write kernel at sector 5 (LBA 5)
-	dd if=$(BUILD_DIR)/kernel.bin of=$(OS_IMAGE) conv=notrunc bs=512 seek=5 2>/dev/null
+	# Write kernel at sector 11 (LBA 11)
+	dd if=$(BUILD_DIR)/kernel.bin of=$(OS_IMAGE) conv=notrunc bs=512 seek=11 2>/dev/null
 	
-	echo "OS image created: $(OS_IMAGE)"
+	@echo "OS image created: $(OS_IMAGE)"
+endif
 
 # =============================================================================
 # Run in QEMU
 # =============================================================================
 run: $(OS_IMAGE)
-	qemu-system-i386 -drive format=raw,file=$(OS_IMAGE) -m 32M -vga std
+	$(QEMU) -drive format=raw,file=$(OS_IMAGE) -m 32M -serial stdio -monitor none -nographic
 
 debug: $(OS_IMAGE)
-	qemu-system-i386 -drive format=raw,file=$(OS_IMAGE) -m 32M -vga std \
+	$(QEMU) -drive format=raw,file=$(OS_IMAGE) -m 32M -serial stdio -monitor none -nographic \
 		-d int,cpu_reset -no-reboot -no-shutdown
 
 clean:
-	rm -rf $(BUILD_DIR) $(OS_IMAGE)
+	python -c "import os,shutil; p=r'$(BUILD_DIR)'; shutil.rmtree(p) if os.path.isdir(p) else None; p=r'$(OS_IMAGE)'; os.remove(p) if os.path.isfile(p) else None"

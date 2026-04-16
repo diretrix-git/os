@@ -30,7 +30,7 @@ start:
     ; =============================================================================
     ; Load Stage 2 from disk
     ; Stage 2 is located at LBA 1 (sector 2, right after MBR)
-    ; We load 4 sectors (2048 bytes) starting at LBA 1
+    ; We load 74 sectors starting at LBA 1 to cover the full stage2 payload
     ; =============================================================================
     
     ; CHS Calculation for LBA 1:
@@ -46,7 +46,7 @@ start:
     mov dh, 0               ; Head 0
     mov ch, 0               ; Cylinder 0
     mov cl, 2               ; Sector 2 (sectors are 1-indexed!)
-    mov al, 10              ; Number of sectors to read (full stage2 payload)
+    mov al, 74              ; Number of sectors to read (full stage2 payload)
     mov ah, 0x02            ; BIOS disk read function
     mov bx, 0x7E00          ; Load address (right after MBR)
     

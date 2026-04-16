@@ -17,10 +17,72 @@
 #define VGA_ADDR 0xB8000
 #define VGA_WIDTH 80
 #define VGA_HEIGHT 25
+#define COM1_PORT 0x3F8
+
+#define KERNEL_LBA 11
+#define KERNEL_SECTORS 2089 /* Actual kernel size in sectors for current build */
 
 #define VGA_BUFFER ((volatile uint16_t *)VGA_ADDR)
 #define VGA_ROW (*(volatile int *)0x90000)
 #define VGA_COL (*(volatile int *)0x90004)
+
+static inline void outb(uint16_t port, uint8_t value);
+static inline uint8_t inb(uint16_t port);
+static void vga_print(const char *str);
+static void vga_print_hex(uint32_t value);
+
+static inline void serial_init(void)
+{
+    outb(COM1_PORT + 1, 0x00); /* Disable interrupts */
+    outb(COM1_PORT + 3, 0x80); /* Enable DLAB */
+    outb(COM1_PORT + 0, 0x03); /* Baud rate divisor low (38400) */
+    outb(COM1_PORT + 1, 0x00); /* Baud rate divisor high */
+    outb(COM1_PORT + 3, 0x03); /* 8 bits, no parity, one stop bit */
+    outb(COM1_PORT + 2, 0xC7); /* FIFO enabled, clear, 14-byte threshold */
+    outb(COM1_PORT + 4, 0x0B); /* IRQs enabled, RTS/DSR set */
+}
+
+static inline int serial_is_transmit_empty(void)
+{
+    return inb(COM1_PORT + 5) & 0x20;
+}
+
+static void serial_putchar(char c)
+{
+    while (!serial_is_transmit_empty())
+        ;
+    outb(COM1_PORT, (uint8_t)c);
+}
+
+static void serial_print(const char *str)
+{
+    while (*str)
+    {
+        char c = *str++;
+        if (c == '\n')
+            serial_putchar('\r');
+        serial_putchar(c);
+    }
+}
+
+static void debug_print(const char *str)
+{
+    vga_print(str);
+    serial_print(str);
+}
+
+static void serial_print_hex(uint32_t value)
+{
+    static const char hex_chars[] = "0123456789ABCDEF";
+    for (int i = 7; i >= 0; i--)
+        serial_putchar(hex_chars[(value >> (i * 4)) & 0xF]);
+}
+
+static void debug_print_hex(uint32_t value)
+{
+    vga_print_hex(value);
+    serial_print_hex(value);
+}
 
 static void vga_putchar(char c)
 {
@@ -90,6 +152,12 @@ static inline uint16_t inw(uint16_t port)
     return result;
 }
 
+static void wait_ide_ready(void)
+{
+    while (inb(0x1F7) & 0x80)
+        ; /* Wait while controller is busy */
+}
+
 /* =============================================================================
  * GDT (Global Descriptor Table)
  * ============================================================================= */
@@ -112,7 +180,7 @@ struct gdt_ptr
 } __attribute__((packed));
 
 static struct gdt_entry gdt[GDT_ENTRIES];
-static struct gdt_ptr gdtp;
+static struct gdt_ptr gdtp __attribute__((unused));
 
 /* GDT Access byte flags */
 #define GDT_ACCESS_PRESENT 0x80
@@ -126,6 +194,7 @@ static struct gdt_ptr gdtp;
 #define GDT_GRAN_4KB 0x80
 #define GDT_GRAN_32BIT 0x40
 
+static void gdt_set_gate(int num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran) __attribute__((unused));
 static void gdt_set_gate(int num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran)
 {
     gdt[num].base_low = base & 0xFFFF;
@@ -140,12 +209,6 @@ static void gdt_set_gate(int num, uint32_t base, uint32_t limit, uint8_t access,
  * Simple disk read in protected mode (using port I/O to IDE controller)
  * This is a simplified PIO read for the first few sectors.
  * ============================================================================= */
-static void wait_ide_ready(void)
-{
-    while (inb(0x1F7) & 0x80)
-        ; /* Wait while controller is busy */
-}
-
 static void read_sectors(uint32_t lba, uint8_t count, uint32_t buffer)
 {
     wait_ide_ready();
@@ -177,28 +240,43 @@ static void read_sectors(uint32_t lba, uint8_t count, uint32_t buffer)
     }
 }
 
+static void read_sectors_lba(uint32_t lba, uint32_t count, uint32_t buffer)
+{
+    while (count > 0)
+    {
+        uint8_t chunk = count > 255 ? 255 : (uint8_t)count;
+        read_sectors(lba, chunk, buffer);
+        lba += chunk;
+        buffer += chunk * 512;
+        count -= chunk;
+    }
+}
+
+void stage2_main(void) __attribute__((section(".text.startup")));
+
 void stage2_main(void)
 {
+    serial_init();
     VGA_ROW = 0;
     VGA_COL = 0;
-    vga_print("Stage 2: Protected mode initialized\n");
+    debug_print("Stage 2: Protected mode initialized\n");
 
-    vga_print("Stage 2: Loading kernel...\n");
-    read_sectors(5, 50, 0x100000);
-    vga_print("Stage 2: Kernel loaded to 0x100000\n");
+    debug_print("Stage 2: Loading kernel...\n");
+    read_sectors_lba(KERNEL_LBA, KERNEL_SECTORS, 0x100000);
+    debug_print("Stage 2: Kernel loaded to 0x100000\n");
 
     uint32_t *kernel_start = (uint32_t *)0x100000;
-    vga_print("Stage 2: First word: ");
-    vga_print_hex(*kernel_start);
-    vga_print("\n");
+    debug_print("Stage 2: First word: ");
+    debug_print_hex(*kernel_start);
+    debug_print("\n");
 
-    vga_print("Stage 2: Jumping to kernel...\n");
+    debug_print("Stage 2: Jumping to kernel at 0x100000...\n");
 
     typedef void (*kernel_entry_t)(void);
     kernel_entry_t kernel_entry = (kernel_entry_t)0x100000;
     kernel_entry();
 
-    vga_print("Stage 2: ERROR - Kernel returned!\n");
+    debug_print("Stage 2: ERROR - Kernel returned!\n");
     while (1)
     {
         __asm__ volatile("hlt");

@@ -1,6 +1,6 @@
 /* Linker script for MyOS kernel */
 
-ENTRY(kernel_main)
+ENTRY(_kernel_entry)
 
 SECTIONS
 {
@@ -10,6 +10,7 @@ SECTIONS
     /* Code section */
     .text : ALIGN(4K)
     {
+        *(.text.startup)
         *(.text*)
     }
     

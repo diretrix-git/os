@@ -47,12 +47,28 @@ protected_mode_start:
     
     ; Set up stack at 0x90000
     mov esp, 0x90000
-    
+
+    ; Protected-mode debug output to serial port COM1
+    mov dx, 0x3F8
+    mov al, 'P'
+    out dx, al
+    mov al, 'M'
+    out dx, al
+    mov al, 'O'
+    out dx, al
+    mov al, 'K'
+    out dx, al
+    mov al, 0x0D
+    out dx, al
+    mov al, 0x0A
+    out dx, al
+
     ; Call C function (now safe because we're in protected mode)
     ; The C code is loaded right after this bootloader
     ; At address 0x8000 (stage2.bin loaded at sector 2, 4 sectors = 2048 bytes after 0x7E00)
     mov eax, 0x8000
     call eax
+
     
     ; Should never return, but halt if it does
 halt_loop:
@@ -64,30 +80,10 @@ halt_loop:
 ; =============================================================================
 [BITS 16]
 enable_a20:
-    ; Wait for keyboard controller
-.wait1:
-    in al, 0x64
-    test al, 2
-    jnz .wait1
-    
-    ; Send write output port command
-    mov al, 0xD1
-    out 0x64, al
-    
-.wait2:
-    in al, 0x64
-    test al, 2
-    jnz .wait2
-    
-    ; Write 0xDF to enable A20
-    mov al, 0xDF
-    out 0x60, al
-    
-.wait3:
-    in al, 0x64
-    test al, 2
-    jnz .wait3
-    
+    ; Use port 0x92 to enable A20 in a simpler, more reliable way for QEMU
+    in al, 0x92
+    or al, 0x02
+    out 0x92, al
     ret
 
 ; =============================================================================
