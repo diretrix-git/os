@@ -84,6 +84,20 @@ struct process *process_create(const char *name, void (*entry)())
     proc->context.ds = 0x10;
     outb(SERIAL_PORT, 'C'); outb(SERIAL_PORT, '7'); outb(SERIAL_PORT, '\n');
 
+    /* Set up initial stack frame for the new process */
+    /* The stack will have a fake context that switch_context will "restore" */
+    uint32_t *stack_ptr = (uint32_t*)proc->stack_top;
+    
+    /* Push registers in reverse order of how switch_context will pop them */
+    /* switch_context pops: ebp, edi, esi, ebx, then ret to eip */
+    stack_ptr -= 1; *stack_ptr = 0;           /* ebp (fake) */
+    stack_ptr -= 1; *stack_ptr = 0;           /* edi (fake) */
+    stack_ptr -= 1; *stack_ptr = 0;           /* esi (fake) */
+    stack_ptr -= 1; *stack_ptr = 0;           /* ebx (fake) */
+    
+    proc->context.esp = (uint32_t)stack_ptr;
+    outb(SERIAL_PORT, 'S'); outb(SERIAL_PORT, 'T'); outb(SERIAL_PORT, 'K'); outb(SERIAL_PORT, '\n');
+
     return proc;
 }
 

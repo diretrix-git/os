@@ -26,3 +26,7 @@ qemu-debug.log
 qemu-kernel.log
 qemu-reset.log
 serial.log
+
+# Build helper scripts
+BUILD_INSTRUCTIONS.txt
+build.bat

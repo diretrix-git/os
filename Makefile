@@ -32,7 +32,7 @@ STAGE2_ENTRY_SRC = $(BOOT_DIR)/stage2_entry.asm
 STAGE2_SRC = $(BOOT_DIR)/stage2.c
 
 KERNEL_SRCS = $(wildcard $(KERNEL_DIR)/*.c)
-KERNEL_ASM_SRCS = $(wildcard $(KERNEL_DIR)/*.asm)
+KERNEL_ASM_SRCS = $(KERNEL_DIR)/isr.asm $(KERNEL_DIR)/switch.asm
 
 # Object files
 STAGE2_ENTRY_OBJ = $(BUILD_DIR)/stage2_entry.o
@@ -86,6 +86,12 @@ $(BUILD_DIR)/%.o: $(KERNEL_DIR)/%.c
 $(BUILD_DIR)/%.o: $(KERNEL_DIR)/%.asm
 	$(NASM) -f win32 $< -o $@
 
+$(BUILD_DIR)/isr.o: $(KERNEL_DIR)/isr.asm
+	$(NASM) -f win32 $< -o $@
+
+$(BUILD_DIR)/switch.o: $(KERNEL_DIR)/switch.asm
+	$(NASM) -f win32 $< -o $@
+
 $(BUILD_DIR)/kernel.bin: $(ALL_KERNEL_OBJS)
 	$(LD) -m i386pe -Ttext=0x100000 -T linker.ld -o $(BUILD_DIR)/kernel.elf $^
 	$(OBJCOPY) -O binary $(BUILD_DIR)/kernel.elf $@
@@ -121,10 +127,10 @@ endif
 # Run in QEMU
 # =============================================================================
 run: $(OS_IMAGE)
-	$(QEMU) -drive format=raw,file=$(OS_IMAGE) -m 32M -serial stdio -monitor none -nographic
+	$(QEMU) -drive format=raw,file=$(OS_IMAGE) -m 32M -serial stdio -monitor none -nographic -device i8042
 
 debug: $(OS_IMAGE)
-	$(QEMU) -drive format=raw,file=$(OS_IMAGE) -m 32M -serial stdio -monitor none -nographic \
+	$(QEMU) -drive format=raw,file=$(OS_IMAGE) -m 32M -serial stdio -monitor none -nographic -device i8042 \
 		-d int,cpu_reset -no-reboot -no-shutdown
 
 clean:

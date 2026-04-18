@@ -1,6 +1,5 @@
 ; =============================================================================
-; Context Switch Function
-; Saves current process context and loads next process context
+; Context Switch Function - Fixed Version
 ; =============================================================================
 
 [BITS 32]
@@ -8,74 +7,67 @@ section .text
 
 global _switch_context
 _switch_context:
-    ; Input: 
-    ;   [esp+4] = old context pointer (struct cpu_context*)
-    ;   [esp+8] = new context pointer (struct cpu_context*)
-    
-    ; cpu_context structure layout (from process.h):
-    ;   0:  eax
-    ;   4:  ebx
-    ;   8:  ecx
-    ;   12: edx
-    ;   16: esi
-    ;   20: edi
-    ;   24: ebp
-    ;   28: esp
-    ;   32: eip
-    ;   36: eflags
-    ;   40: cs
-    ;   44: ds
+    ; Parameters at entry:
+    ; [esp+4]  = old_ctx
+    ; [esp+8]  = new_ctx
     
     push ebp
     push ebx
     push esi
     push edi
     
-    ; After pushes, stack layout:
-    ; [esp] = edi
-    ; [esp+4] = esi
-    ; [esp+8] = ebx
+    ; Stack layout after pushes:
+    ; [esp+0]  = edi
+    ; [esp+4]  = esi
+    ; [esp+8]  = ebx
     ; [esp+12] = ebp (saved)
-    ; [esp+16] = return address
-    ; [esp+20] = old context pointer (first param)
-    ; [esp+24] = new context pointer (second param)
+    ; [esp+16] = return addr
+    ; [esp+20] = old_ctx (param 1)
+    ; [esp+24] = new_ctx (param 2)
     
-    ; Save current registers to old context
-    mov ebp, [esp+20]         ; old context pointer
+    ; === SAVE CURRENT CONTEXT ===
+    mov ebp, [esp+20]         ; old_ctx pointer
     
-    mov [ebp+0], eax          ; save eax
-    mov [ebp+4], ebx          ; save ebx (from stack)
-    mov [ebp+8], ecx          ; save ecx
-    mov [ebp+12], edx         ; save edx
-    mov [ebp+16], esi         ; save esi (from stack)
-    mov [ebp+20], edi         ; save edi (from stack)
+    mov [ebp+0], eax
+    mov [ebp+4], ebx
+    mov [ebp+8], ecx
+    mov [ebp+12], edx
+    mov [ebp+16], esi
     
-    ; Save ebp - it's currently on the stack at [esp+12] (pushed at line with push ebp)
-    mov eax, [esp+12]         ; get the pushed ebp value
-    mov [ebp+24], eax         ; save ebp to context
+    mov edi, [esp+0]          ; load edi from stack
+    mov [ebp+20], edi         ; save to context
     
-    ; Get new context pointer
-    mov ebx, [esp+24]         ; new context pointer (second parameter)
+    mov edi, [esp+12]         ; load saved ebp from stack
+    mov [ebp+24], edi         ; save to context
     
-    ; Load new registers
-    mov eax, [ebx+0]          ; new eax
-    mov ecx, [ebx+8]          ; new ecx
-    mov edx, [ebx+12]         ; new edx
+    ; === LOAD FROM NEW CONTEXT ===
+    mov ebp, [esp+24]         ; new_ctx pointer
     
-    ; Load new stack pointer for the target process
-    mov esp, [ebx+28]         ; new esp
+    mov eax, [ebp+0]
+    mov ebx, [ebp+4]
+    mov ecx, [ebp+8]
+    mov edx, [ebp+12]
+    mov esi, [ebp+16]
+    mov edi, [ebp+20]
     
-    ; Restore saved registers for new process
-    pop edi                   ; restore edi from new stack
-    pop esi                   ; restore esi from new stack
-    pop ebx                   ; restore ebx from new stack
-    pop ebp                   ; restore ebp from new stack
+    ; Cache new esp and ds BEFORE overwriting ebp
+    mov ecx, [ebp+28]         ; new esp
+    mov edx, [ebp+44]         ; new ds
     
-    ; Now we're running on the new process's stack
-    ; Load segment registers
-    mov ds, [ebx+44]          ; new ds
+    ; Restore ebp from new context
+    mov ebp, [ebp+24]
     
-    ; Push new eip and return to it
-    mov eax, [ebx+32]         ; new eip
-    push eax
+    ; Load segment register
+    mov ds, edx
+    
+    ; NOW switch stack
+    mov esp, ecx
+    
+    ; Pop saved registers from new stack
+    pop ebp
+    pop edi
+    pop esi
+    pop ebx
+    
+    ; Return to new eip
     ret

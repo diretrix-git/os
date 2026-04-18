@@ -145,9 +145,12 @@ void kernel_main(void)
     vga_print("Paging enabled\n");
 
     serial_print("Scheduler init...\n");
+    vga_print("Scheduler init...\n");
     scheduler_init();
     serial_print("Scheduler ready\n");
     vga_print("Scheduler ready\n");
+    serial_print("After scheduler\n");
+    vga_print("After scheduler\n");
 
     serial_print("Enabling interrupts...\n");
     __asm__ volatile("sti");
@@ -155,15 +158,21 @@ void kernel_main(void)
     vga_print("Interrupts enabled\n");
 
     vga_print("Creating demo threads...\n");
+    serial_print("Creating demo threads...\n");
     struct process *t1 = process_create("Thread1", thread1_entry);
     struct process *t2 = process_create("Thread2", thread2_entry);
 
-    if (t1)
+    if (t1) {
         scheduler_add(t1);
-    if (t2)
+        serial_print("Thread1 added\n");
+    }
+    if (t2) {
         scheduler_add(t2);
+        serial_print("Thread2 added\n");
+    }
 
     vga_print("\n");
+    serial_print("Starting shell...\n");
 
     shell_init();
     shell_run();
