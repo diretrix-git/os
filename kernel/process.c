@@ -1,16 +1,17 @@
 #include "process.h"
 #include "pmm.h"
-
-static inline void outb(uint16_t port, uint8_t value)
-{
-    __asm__ volatile("outb %0, %1" : : "a"(value), "Nd"(port));
-}
-
-#define SERIAL_PORT 0x3F8
+#include "scheduler.h"
 
 static struct process process_table[MAX_PROCESSES];
 static uint32_t next_pid = 1;
 static struct process *current_process = 0;
+
+// static inline void outb(uint16_t port, uint8_t value)
+// {
+//     __asm__ volatile("outb %0, %1" : : "a"(value), "Nd"(port));
+// }
+
+// #define SERIAL_PORT 0x3F8
 
 struct process *process_create(const char *name, void (*entry)(void))
 {
@@ -90,9 +91,12 @@ void process_exit(void)
     if (current_process)
     {
         current_process->state = PROCESS_TERMINATED;
-        current_process->pid = 0;
         pmm_free_frame(current_process->stack_bottom);
+        current_process->pid = 0;
     }
+    /* Don't halt — yield back so other processes can run */
+    scheduler_yield();
+    /* If we somehow return, halt */
     while (1)
         __asm__ volatile("hlt");
 }

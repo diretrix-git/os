@@ -30,7 +30,8 @@ static void serial_print(const char *s)
 {
     while (*s)
     {
-        if (*s == '\n') serial_putchar('\r');
+        if (*s == '\n')
+            serial_putchar('\r');
         serial_putchar(*s++);
     }
 }
@@ -40,8 +41,8 @@ static void serial_print(const char *s)
 #define MAX_PROCS 16
 
 static struct process *queue[MAX_PROCS];
-static int  count   = 0;
-static int  cur_idx = 0;
+static int count = 0;
+static int cur_idx = 0;
 static struct process *current_process = 0;
 
 /* ------------------------------------------------------------------ */
@@ -49,7 +50,7 @@ static struct process *current_process = 0;
 void scheduler_init(void)
 {
     serial_print("[SCHED] Init\n");
-    count   = 0;
+    count = 0;
     cur_idx = 0;
     current_process = 0;
     for (int i = 0; i < MAX_PROCS; i++)
@@ -62,32 +63,80 @@ void scheduler_add(struct process *proc)
     if (count >= MAX_PROCS)
         return;
     queue[count++] = proc;
-    serial_print("[SCHED] Added process\n");
+    serial_print("[SCHED] Added: ");
+    serial_print(proc->name);
+    serial_print("\n");
+}
+void scheduler_remove(struct process *proc)
+{
+    for (int i = 0; i < count; i++)
+    {
+        if (queue[i] == proc)
+        {
+            queue[i] = queue[--count];
+            queue[count] = 0;
+            return;
+        }
+    }
 }
 
-/* Called from the timer IRQ — picks the next READY process */
+/* Find next READY process, round-robin */
+static struct process *next_ready(void)
+{
+    if (count == 0)
+        return 0;
+    int start = (cur_idx < 0) ? 0 : cur_idx;
+    for (int i = 0; i < count; i++)
+    {
+        int idx = (start + 1 + i) % count;
+        struct process *p = queue[idx];
+        if (p && p->state == PROCESS_READY)
+        {
+            cur_idx = idx;
+            return p;
+        }
+    }
+    /* Nothing else ready — resume current if still running/ready */
+    if (current_process &&
+        (current_process->state == PROCESS_RUNNING ||
+         current_process->state == PROCESS_READY))
+        return current_process;
+    return 0;
+}
+
+/* Called from timer IRQ every N ticks */
 void scheduler_tick(void)
 {
     if (count == 0)
         return;
 
-    /* Find next READY process (skip current) */
-    int start = cur_idx;
-    for (int i = 1; i <= count; i++)
+    struct process *next = next_ready();
+    if (!next || next == current_process)
+        return;
+
+    if (current_process && current_process->state == PROCESS_RUNNING)
+        current_process->state = PROCESS_READY;
+
+    next->state = PROCESS_RUNNING;
+    scheduler_switch(next);
+}
+/* Cooperative yield — call from a process to give up the CPU */
+void scheduler_yield(void)
+{
+    if (!current_process)
+        return;
+    if (current_process->state == PROCESS_RUNNING)
+        current_process->state = PROCESS_READY;
+
+    struct process *next = next_ready();
+    if (!next || next == current_process)
     {
-        int idx = (start + i) % count;
-        struct process *p = queue[idx];
-        if (p && p != current_process && p->state == PROCESS_READY)
-        {
-            cur_idx = idx;
-            /* Demote current before switching */
-            if (current_process && current_process->state == PROCESS_RUNNING)
-                current_process->state = PROCESS_READY;
-            p->state = PROCESS_RUNNING;
-            scheduler_switch(p);
-            return;
-        }
+        if (current_process)
+            current_process->state = PROCESS_RUNNING;
+        return;
     }
+    next->state = PROCESS_RUNNING;
+    scheduler_switch(next);
 }
 
 struct process *scheduler_get_current(void)

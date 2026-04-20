@@ -8,6 +8,7 @@
 #include "keyboard.h"
 #include "pmm.h"
 #include "paging.h"
+#include "heap.h"
 #include "process.h"
 #include "scheduler.h"
 #include "shell.h"
