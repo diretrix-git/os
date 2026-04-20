@@ -23,7 +23,7 @@ Sora OS boots via GRUB Multiboot and implements core OS concepts entirely withou
 | **PMM** | Manual bitmap allocator — one bit per 4 KB page frame |
 | **Scheduler** | Preemptive round-robin with Process Control Blocks |
 | **Threads** | Kernel threads sharing parent address space + mutex support |
-| **Keyboard** | PS/2 IRQ1 driver with full scancode-to-ASCII table |
+| **Keyboard** | PS/2 IRQ1 driver with full scancode-to-ASCII table + shift support |
 | **Serial** | COM1 UART debug output at 9600 baud |
 | **Shell** | Interactive kernel-space command interpreter |
 | **Panic** | Kernel panic handler — white on red, halts CPU |
@@ -40,7 +40,7 @@ SoraOS/
 │   ├── gdt.c               # Global Descriptor Table setup
 │   ├── gdt_flush.asm       # lgdt + segment register reload
 │   ├── idt.c               # IDT setup and IRQ dispatch
-│   ├── isr.asm             # ISR stubs for vectors 0–47
+│   ├── isr.asm             # ISR stubs for vectors 0-47
 │   ├── pic.c               # 8259A PIC driver
 │   ├── pit.c               # PIT timer driver (100 Hz)
 │   ├── vga.c               # VGA text-mode console driver
@@ -130,7 +130,7 @@ i686-linux-gnu-gdb kernel.bin
 ## Memory Layout
 
 ```
-0x00000000 – 0x000FFFFF   Low memory (BIOS, VGA buffer at 0xB8000)
+0x00000000 - 0x000FFFFF   Low memory (BIOS, VGA buffer at 0xB8000)
 0x00100000                Kernel load address (1 MB mark)
   [.multiboot]            Multiboot header + kernel_start entry code
   [.text]                 Kernel code
@@ -139,6 +139,45 @@ i686-linux-gnu-gdb kernel.bin
   [.bss]                  Zero-initialized (PMM bitmap, stack, PCB pool)
 [kernel_end]              Start of free physical pages managed by PMM
 ```
+
+---
+
+## Known Limitations
+
+These are intentional simplifications made to keep the project beginner-friendly and focused on core OS concepts.
+
+### Memory
+- **No virtual memory or paging** — all addresses are physical. There is no page table, no demand paging, and no memory isolation between processes.
+- **No dynamic heap allocator** — memory is managed manually using a static bitmap. There is no `malloc`/`free` equivalent.
+- **Fixed memory ceiling** — the PMM tracks up to 256 MB of RAM. Systems with more RAM will have the excess ignored.
+- **No memory protection** — any process can read or write any physical address, including kernel memory.
+
+### Processes and Scheduling
+- **No user mode (ring 3)** — all code runs in ring 0 (kernel mode). There is no privilege separation between the kernel and user programs.
+- **No process isolation** — processes share the same address space. A buggy process can corrupt the kernel.
+- **Simple round-robin only** — the scheduler does not implement priority aging, real-time scheduling, or sleep/wake queues beyond basic mutex blocking.
+- **No process loading** — there is no filesystem or ELF loader, so new processes cannot be loaded from disk at runtime.
+
+### I/O and Drivers
+- **No mouse support** — VGA text mode has no mouse driver. The QEMU window does not respond to mouse input. This is a hardware-level limitation of 80×25 text mode.
+- **No scroll buffer** — the VGA display is exactly 80×25 characters. There is no history or scroll-back. Once text scrolls off the top, it is gone.
+- **No filesystem** — there is no disk driver, FAT, ext2, or any other filesystem. All data lives in RAM and is lost on reboot.
+- **No network stack** — no Ethernet, TCP/IP, or socket support.
+- **PS/2 keyboard only** — USB keyboards work in QEMU because QEMU emulates PS/2, but a real machine with USB-only input would require a USB HID driver.
+
+### Display
+- **VGA text mode only** — no graphics mode, no framebuffer, no VESA. The display is limited to 16 foreground and 8 background colors using the standard VGA palette.
+- **No font customization** — the character font is the VGA BIOS ROM font. Some characters (like `~`) render at the top of the cell rather than the middle due to the fixed 8×16 bitmap in the BIOS.
+- **80×25 fixed resolution** — the screen size cannot be changed without switching to a graphics mode.
+
+### Shell
+- **No command history** — pressing the up arrow does not recall previous commands.
+- **No tab completion** — there is no autocomplete for command names.
+- **No pipes or redirection** — commands cannot be chained with `|` or `>`.
+
+### Build and Toolchain
+- **WSL only** — the build system requires a Linux environment. It uses `i686-linux-gnu-gcc` which is only available on Linux/WSL. Native Windows builds are not supported.
+- **No unit test runner** — the `tests/` directory exists but property-based tests were not implemented in this version.
 
 ---
 
