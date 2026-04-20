@@ -267,7 +267,10 @@ void shell_run(void) {
 
     cmd_banner(0, (void*)0);
     vga_print("Type 'help' to see all commands.\n\n");
-    vga_print_color("sora> ", 0x0E);
+    /* Print prompt */
+    vga_print_color("user", 0x0A);
+    vga_print_color("@soraos", 0x0B);
+    vga_print_color(":~$ ", 0x07);
 
     for (;;) {
         /* Refresh status bar periodically */
@@ -289,7 +292,10 @@ void shell_run(void) {
             line[pos] = '\0';
             if (pos > 0) shell_parse(line);
             pos = 0;
-            vga_print_color("sora> ", 0x0E);
+            /* Print prompt */
+            vga_print_color("user", 0x0A);
+            vga_print_color("@soraos", 0x0B);
+            vga_print_color(":~$ ", 0x07);
         } else if (c == '\b') {
             if (pos > 0) { pos--; vga_putchar('\b'); }
         } else if (pos < MAX_LINE - 1) {
