@@ -1,43 +1,38 @@
-/* Linker script for MyOS kernel */
+/* linker.ld — Sora OS kernel linker script */
+/* Places kernel at physical address 0x100000 (1 MB mark) */
 
-ENTRY(kernel_entry)
+ENTRY(kernel_start)
 
 SECTIONS
 {
-    /* Kernel loads at 1MB */
     . = 0x100000;
-    
-    /* Code section */
-    .text :
+
+    /* Multiboot header + kernel_start entry code — must be first */
+    .multiboot ALIGN(4) :
     {
-        *(.text.startup)
+        *(.multiboot)
+    }
+
+    .text ALIGN(4096) :
+    {
         *(.text*)
     }
-    
-    /* Read-only data */
-    .rodata :
+
+    .rodata ALIGN(4096) :
     {
         *(.rodata*)
     }
-    
-    /* Initialized data */
-    .data :
+
+    .data ALIGN(4096) :
     {
         *(.data*)
     }
-    
-    /* Uninitialized data (BSS) */
-    .bss : {
-        _bss_start = .;
+
+    .bss ALIGN(4096) :
+    {
         *(COMMON)
         *(.bss*)
-        _bss_end = .;
     }
-    
-    /* Discard unwanted sections */
-    /DISCARD/ :
-    {
-        *(.comment)
-        *(.note*)
-    }
+
+    kernel_end = .;
 }

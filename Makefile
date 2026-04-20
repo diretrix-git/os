@@ -14,7 +14,6 @@ LDFLAGS := -T linker.ld -nostdlib -m elf_i386
 
 # ── Directories ───────────────────────────────────────────────────────────────
 SRC_DIR   := src
-INC_DIR   := include
 BUILD_DIR := build
 
 # ── Sources ───────────────────────────────────────────────────────────────────
@@ -36,28 +35,22 @@ $(BUILD_DIR):
 kernel.bin: $(OBJS)
 	$(LD) $(LDFLAGS) -o $@ $^
 
-# Compile C sources → build/
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Assemble NASM sources → build/
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.asm | $(BUILD_DIR)
 	$(AS) $(ASFLAGS) $< -o $@
 
-# Run in QEMU — serial output to this terminal
 run: kernel.bin
 	qemu-system-i386 -kernel kernel.bin -serial stdio
 
-# Debug: QEMU paused, GDB stub on port 1234
 debug: kernel.bin
 	qemu-system-i386 -kernel kernel.bin -serial stdio -s -S
 
-# Build bootable ISO (requires grub-mkrescue + xorriso)
 iso: kernel.bin
 	mkdir -p iso/boot/grub
 	cp kernel.bin iso/boot/kernel.bin
 	grub-mkrescue -o sora.iso iso
 
-# Remove all build artifacts
 clean:
 	rm -rf $(BUILD_DIR) kernel.bin sora.iso
