@@ -127,6 +127,64 @@ i686-linux-gnu-gdb kernel.bin
 
 ---
 
+## Core OS Concepts Implemented
+
+### 1. I/O Setup
+**Yes — implemented.** All hardware communication uses x86 `inb`/`outb` instructions and memory-mapped I/O.
+
+| File | What it does |
+|---|---|
+| `src/keyboard.c` | Reads PS/2 scancodes from I/O port `0x60` on IRQ1, translates to ASCII |
+| `src/vga.c` | Writes directly to memory-mapped VGA buffer at physical address `0xB8000` |
+| `src/serial.c` | Writes to COM1 UART via I/O ports `0x3F8`–`0x3FD` at 9600 baud |
+| `src/pic.c` | Programs the 8259A PIC chip via ports `0x20`/`0x21`/`0xA0`/`0xA1` |
+| `src/pit.c` | Programs the PIT timer chip via ports `0x40`/`0x43` for 100 Hz ticks |
+
+### 2. Multithreading
+**Yes — implemented.** Kernel threads share the parent process address space and are scheduled alongside processes.
+
+| File | What it does |
+|---|---|
+| `src/thread.c` | `create_thread()` allocates a separate stack per thread, adds TCB to run queue |
+| `src/mutex.c` | `mutex_lock()`/`mutex_unlock()` using x86 `XCHG` (atomic test-and-set) |
+| `include/thread.h` | Defines `tcb_t` (Thread Control Block) with its own `esp`, `stack_base`, parent PCB |
+
+Blocked threads are placed in a mutex wait list and set back to READY when the lock is released.
+
+### 3. CPU Scheduling
+**Yes — implemented.** Preemptive round-robin scheduling driven by the PIT timer at 100 Hz.
+
+| File | What it does |
+|---|---|
+| `src/scheduler.c` | Maintains a run queue of PCBs, `schedule()` picks the next READY process |
+| `src/context_switch.asm` | Saves current `ESP` to old PCB, loads new PCB's `ESP`, `ret` resumes new process |
+| `src/pit.c` | `timer_handler()` fires every 10ms and calls `schedule()` |
+
+Every 10ms the CPU is interrupted, the current process is paused, and the next one in the queue runs.
+
+### 4. Multitasking
+**Yes — implemented.** Multiple processes run concurrently, each with its own kernel stack.
+
+| File | What it does |
+|---|---|
+| `src/scheduler.c` | `create_process()` sets up a PCB with its own stack (allocated via PMM) |
+| `src/kernel_main.c` | Boot screen, init sequence, and shell all run as the main kernel task |
+
+Up to 64 processes can be in the run queue simultaneously. An idle process runs `hlt` when nothing else is ready.
+
+### 5. Memory Management
+**Yes — implemented.** Manual bitmap-based physical page allocator, no dynamic heap.
+
+| File | What it does |
+|---|---|
+| `src/pmm.c` | Static `uint32_t bitmap[2048]` — each bit = one 4 KB page (0=free, 1=used) |
+| `src/pmm.c` | `pmm_alloc_page()` finds first free bit, marks used, returns physical address |
+| `src/pmm.c` | `pmm_free_page()` clears the bit to return the page to the free pool |
+
+Initialized from the GRUB Multiboot memory map — only pages reported as available RAM are marked free. Kernel image pages are always marked used.
+
+---
+
 ## Memory Layout
 
 ```
