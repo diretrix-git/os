@@ -55,8 +55,7 @@ static void cmd_help(int argc, char** argv) {
     vga_print_color("  spawn             ", 0x0E); vga_print("Start a new demo process\n");
     vga_print_color("  thread            ", 0x0E); vga_print("Start a new kernel thread\n");
     vga_print_color("  reboot            ", 0x0E); vga_print("Reboot the system\n");
-    vga_print_color("  halt              ", 0x0E); vga_print("Halt the CPU\n");
-    vga_print_color("  exit              ", 0x0E); vga_print("Exit current process (halt)\n");
+    vga_print_color("  exit              ", 0x0E); vga_print("Shut down Vamos OS\n");
     vga_print_color("  about             ", 0x0E); vga_print("About Vamos OS\n");
     vga_print_color("  banner            ", 0x0E); vga_print("Show OS banner\n");
     vga_print("\n");
@@ -178,12 +177,6 @@ static void cmd_reboot(int argc, char** argv) {
     for (;;) __asm__ volatile("hlt");
 }
 
-static void cmd_halt(int argc, char** argv) {
-    (void)argc; (void)argv;
-    vga_print_color("System halted. Safe to power off.\n", 0x0C);
-    __asm__ volatile("cli; hlt");
-}
-
 static void cmd_about(int argc, char** argv) {
     (void)argc; (void)argv;
     vga_print_color("\n  Vamos OS v1.0\n", 0x0B);
@@ -197,38 +190,55 @@ static void cmd_about(int argc, char** argv) {
 
 static void cmd_banner(int argc, char** argv) {
     (void)argc; (void)argv;
-    vga_print_color("\n __   __                              ___  ____  \n", 0x0B);
-    vga_print_color(" \\ \\ / /__ _ _ __ ___   ___  ___    / _ \\/ ___| \n", 0x0B);
-    vga_print_color("  \\ V / _` | '_ ` _ \\ / _ \\/ __|  | | | \\___ \\ \n", 0x0B);
-    vga_print_color("   | | (_| | | | | | | (_) \\__ \\  | |_| |___) |\n", 0x0B);
-    vga_print_color("   |_|\\__,_|_| |_| |_|\\___/|___/   \\___/|____/ \n", 0x0B);
+    vga_print_color("\n__     __                              ___  ____  \n", 0x0B);
+    vga_print_color("\\ \\   / /__ _ _ __ ___   ___  ___    / _ \\/ ___| \n", 0x0B);
+    vga_print_color(" \\ \\ / / _` | '_ ` _ \\ / _ \\/ __|  | | | \\___ \\ \n", 0x0B);
+    vga_print_color("  \\ V / (_| | | | | | | (_) \\__ \\  | |_| |___) |\n", 0x0B);
+    vga_print_color("   \\_/ \\__,_|_| |_| |_|\\___/|___/   \\___/|____/ \n", 0x0B);
     vga_print_color("           Vamos OS v1.0\n\n", 0x0E);
 }
 
 /* ── ls: show processes + threads in one view ───────────────────────────── */
 static void cmd_ls(int argc, char** argv) {
     (void)argc; (void)argv;
-    vga_print_color("\nTYPE     ID   STATE    NAME\n", 0x0B);
-    vga_print_color("------   --   -------  ----\n", 0x08);
+    vga_print_color("\nProcesses:\n", 0x0B);
+    vga_print_color("  PID   STATE     NAME\n", 0x08);
     pcb_t* p = run_queue;
     char buf[12];
+    int found = 0;
     while (p) {
         if (p->pid != 0) {
-            vga_print_color("process  ", 0x0A);
+            vga_print("  ");
             sh_itoa(p->pid, buf); vga_print(buf);
-            vga_print("    ");
-            vga_print_color(state_name(p->state), 0x07);
+            vga_print("     ");
+            vga_print_color(state_name(p->state), 0x0A);
             vga_print("  kernel\n");
-        } else {
-            tcb_t* t = (tcb_t*)p;
-            vga_print_color("thread   ", 0x0B);
-            sh_itoa(t->tid, buf); vga_print(buf);
-            vga_print("    ");
-            vga_print_color(state_name(p->state), 0x07);
-            vga_print("  thread\n");
+            found = 1;
         }
         p = p->next;
     }
+    if (!found) vga_print("  (none)\n");
+
+    vga_print_color("\nThreads:\n", 0x0B);
+    vga_print_color("  TID   STATE     PARENT\n", 0x08);
+    p = run_queue;
+    found = 0;
+    while (p) {
+        if (p->pid == 0) {
+            tcb_t* t = (tcb_t*)p;
+            vga_print("  ");
+            sh_itoa(t->tid, buf); vga_print(buf);
+            vga_print("     ");
+            vga_print_color(state_name(p->state), 0x0A);
+            vga_print("  pid=");
+            if (t->parent) { sh_itoa(t->parent->pid, buf); vga_print(buf); }
+            else vga_print("none");
+            vga_putchar('\n');
+            found = 1;
+        }
+        p = p->next;
+    }
+    if (!found) vga_print("  (none)\n");
     vga_putchar('\n');
 }
 
@@ -298,11 +308,24 @@ static void cmd_thread(int argc, char** argv) {
     }
 }
 
-/* ── exit: exit current shell session (halt) ─────────────────────────────── */
 static void cmd_exit(int argc, char** argv) {
     (void)argc; (void)argv;
-    vga_print_color("Goodbye. System halting.\n", 0x0B);
-    __asm__ volatile("cli; hlt");
+    vga_print_color("\nShutting down Vamos OS...\n", 0x0C);
+    /* Small visible delay */
+    volatile uint32_t i;
+    for (i = 0; i < 20000000; i++) __asm__ volatile("nop");
+    /* ACPI shutdown via port 0x604 (QEMU) */
+    __asm__ volatile("outw %0, %1" : : "a"((uint16_t)0x2000), "Nd"((uint16_t)0x604));
+    /* Fallback: keyboard controller reset */
+    __asm__ volatile("cli");
+    for (i = 0; i < 100000; i++) {
+        uint8_t s;
+        __asm__ volatile("inb $0x64, %0" : "=a"(s));
+        if (!(s & 0x02)) break;
+    }
+    __asm__ volatile("outb %0, $0x64" : : "a"((uint8_t)0xFE));
+    /* Final fallback: halt */
+    for (;;) __asm__ volatile("cli; hlt");
 }
 
 /* ── Command table ──────────────────────────────────────────────────────── */
@@ -324,7 +347,6 @@ static shell_cmd_t command_table[] = {
     { "spawn",   cmd_spawn   },
     { "thread",  cmd_thread  },
     { "reboot",  cmd_reboot  },
-    { "halt",    cmd_halt    },
     { "exit",    cmd_exit    },
     { "about",   cmd_about   },
     { "banner",  cmd_banner  },
