@@ -37,17 +37,17 @@ static void boot_screen(void) {
 
     delay(3000000);
 
-    /* Draw centered ASCII art logo — "Sora OS" */
-    vga_set_cursor(3, 18);
-    type_print("  ____                      ___  ____  ", 0x0B, 200000);
-    vga_set_cursor(4, 18);
-    type_print(" / ___|  ___  _ __ __ _    / _ \\/ ___| ", 0x0B, 200000);
-    vga_set_cursor(5, 18);
-    type_print(" \\___ \\ / _ \\| '__/ _` |  | | | \\___ \\ ", 0x0B, 200000);
-    vga_set_cursor(6, 18);
-    type_print("  ___) | (_) | | | (_| |  | |_| |___) |", 0x0B, 200000);
-    vga_set_cursor(7, 18);
-    type_print(" |____/ \\___/|_|  \\__,_|   \\___/|____/ ", 0x0B, 200000);
+    /* Draw centered ASCII art logo — "Vamos OS" */
+    vga_set_cursor(3, 17);
+    type_print(" __   __                              ___  ____  ", 0x0B, 200000);
+    vga_set_cursor(4, 17);
+    type_print(" \\ \\ / /__ _ _ __ ___   ___  ___    / _ \\/ ___| ", 0x0B, 200000);
+    vga_set_cursor(5, 17);
+    type_print("  \\ V / _` | '_ ` _ \\ / _ \\/ __|  | | | \\___ \\ ", 0x0B, 200000);
+    vga_set_cursor(6, 17);
+    type_print("   | | (_| | | | | | | (_) \\__ \\  | |_| |___) |", 0x0B, 200000);
+    vga_set_cursor(7, 17);
+    type_print("   |_|\\__,_|_| |_| |_|\\___/|___/   \\___/|____/ ", 0x0B, 200000);
 
     vga_set_cursor(9, 28);
     type_print("A Simple x86 Kernel", 0x07, 150000);
@@ -70,7 +70,7 @@ static void boot_screen(void) {
     }
 
     vga_set_cursor(14, 20);
-    type_print("[ DONE ] Sora OS ready.", 0x0A, 200000);
+    type_print("[ DONE ] Vamos OS ready.", 0x0A, 200000);
 
     delay(8000000);
 }
@@ -83,7 +83,7 @@ void kernel_main(multiboot_info_t* mb) {
     /* 2. VGA init */
     vga_init();
     serial_init();
-    serial_print("Sora OS booting...\n");
+    serial_print("Vamos OS booting...\n");
 
     /* 3. Boot screen with animation */
     boot_screen();

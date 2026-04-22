@@ -86,7 +86,7 @@ void vga_draw_statusbar(void) {
         vga_write_at(0, c, ' ', STATUS_COLOR);
 
     /* Left: OS name */
-    vga_print_at(0, 1, "Sora OS v1.0", STATUS_COLOR);
+    vga_print_at(0, 1, "Vamos OS v1.0", STATUS_COLOR);
 
     /* Right: tick counter as uptime indicator */
     uint32_t ticks = get_tick_count();
