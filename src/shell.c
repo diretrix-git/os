@@ -43,17 +43,21 @@ static void sh_delay(uint32_t n) {
 
 static void cmd_help(int argc, char** argv) {
     (void)argc; (void)argv;
-    vga_print_color("\n=== Sora OS Commands ===\n", 0x0B);
+    vga_print_color("\n=== Vamos OS Commands ===\n", 0x0B);
     vga_print_color("  help              ", 0x0E); vga_print("Show this help list\n");
     vga_print_color("  clear             ", 0x0E); vga_print("Clear the screen\n");
     vga_print_color("  echo <text>       ", 0x0E); vga_print("Print text to screen\n");
+    vga_print_color("  ls                ", 0x0E); vga_print("List running processes and threads\n");
     vga_print_color("  time              ", 0x0E); vga_print("Show system uptime\n");
     vga_print_color("  ps                ", 0x0E); vga_print("List running processes\n");
     vga_print_color("  threads           ", 0x0E); vga_print("List kernel threads\n");
     vga_print_color("  meminfo           ", 0x0E); vga_print("Show memory usage\n");
+    vga_print_color("  spawn             ", 0x0E); vga_print("Start a new demo process\n");
+    vga_print_color("  thread            ", 0x0E); vga_print("Start a new kernel thread\n");
     vga_print_color("  reboot            ", 0x0E); vga_print("Reboot the system\n");
     vga_print_color("  halt              ", 0x0E); vga_print("Halt the CPU\n");
-    vga_print_color("  about             ", 0x0E); vga_print("About Sora OS\n");
+    vga_print_color("  exit              ", 0x0E); vga_print("Exit current process (halt)\n");
+    vga_print_color("  about             ", 0x0E); vga_print("About Vamos OS\n");
     vga_print_color("  banner            ", 0x0E); vga_print("Show OS banner\n");
     vga_print("\n");
 }
@@ -182,7 +186,7 @@ static void cmd_halt(int argc, char** argv) {
 
 static void cmd_about(int argc, char** argv) {
     (void)argc; (void)argv;
-    vga_print_color("\n  Sora OS v1.0\n", 0x0B);
+    vga_print_color("\n  Vamos OS v1.0\n", 0x0B);
     vga_print("  A minimal x86 kernel written in C and Assembly.\n");
     vga_print("  Architecture : x86 (i686) protected mode\n");
     vga_print("  Bootloader   : GRUB Multiboot\n");
@@ -193,12 +197,112 @@ static void cmd_about(int argc, char** argv) {
 
 static void cmd_banner(int argc, char** argv) {
     (void)argc; (void)argv;
-    vga_print_color("\n  ____                      ___  ____  \n", 0x0B);
-    vga_print_color(" / ___|  ___  _ __ __ _    / _ \\/ ___| \n", 0x0B);
-    vga_print_color(" \\___ \\ / _ \\| '__/ _` |  | | | \\___ \\ \n", 0x0B);
-    vga_print_color("  ___) | (_) | | | (_| |  | |_| |___) |\n", 0x0B);
-    vga_print_color(" |____/ \\___/|_|  \\__,_|   \\___/|____/ \n", 0x0B);
-    vga_print_color("            Sora OS v1.0\n\n", 0x0E);
+    vga_print_color("\n __   __                              ___  ____  \n", 0x0B);
+    vga_print_color(" \\ \\ / /__ _ _ __ ___   ___  ___    / _ \\/ ___| \n", 0x0B);
+    vga_print_color("  \\ V / _` | '_ ` _ \\ / _ \\/ __|  | | | \\___ \\ \n", 0x0B);
+    vga_print_color("   | | (_| | | | | | | (_) \\__ \\  | |_| |___) |\n", 0x0B);
+    vga_print_color("   |_|\\__,_|_| |_| |_|\\___/|___/   \\___/|____/ \n", 0x0B);
+    vga_print_color("           Vamos OS v1.0\n\n", 0x0E);
+}
+
+/* ── ls: show processes + threads in one view ───────────────────────────── */
+static void cmd_ls(int argc, char** argv) {
+    (void)argc; (void)argv;
+    vga_print_color("\nTYPE     ID   STATE    NAME\n", 0x0B);
+    vga_print_color("------   --   -------  ----\n", 0x08);
+    pcb_t* p = run_queue;
+    char buf[12];
+    while (p) {
+        if (p->pid != 0) {
+            vga_print_color("process  ", 0x0A);
+            sh_itoa(p->pid, buf); vga_print(buf);
+            vga_print("    ");
+            vga_print_color(state_name(p->state), 0x07);
+            vga_print("  kernel\n");
+        } else {
+            tcb_t* t = (tcb_t*)p;
+            vga_print_color("thread   ", 0x0B);
+            sh_itoa(t->tid, buf); vga_print(buf);
+            vga_print("    ");
+            vga_print_color(state_name(p->state), 0x07);
+            vga_print("  thread\n");
+        }
+        p = p->next;
+    }
+    vga_putchar('\n');
+}
+
+/* ── spawn: start a new demo process ────────────────────────────────────── */
+static uint32_t spawn_counter = 0;
+
+static void spawned_task(void) {
+    /* Each spawned process prints its PID a few times then exits */
+    pcb_t* me = get_current_process();
+    char buf[12];
+    uint32_t pid = me ? me->pid : 0;
+    for (int i = 0; i < 5; i++) {
+        vga_print_color("\n[spawned process pid=", 0x0D);
+        sh_itoa(pid, buf); vga_print_color(buf, 0x0D);
+        vga_print_color(" tick ", 0x0D);
+        sh_itoa((uint32_t)i, buf); vga_print_color(buf, 0x0D);
+        vga_print_color("]", 0x0D);
+        /* busy wait */
+        volatile uint32_t j;
+        for (j = 0; j < 5000000; j++) __asm__ volatile("nop");
+    }
+    process_exit();
+}
+
+static void cmd_spawn(int argc, char** argv) {
+    (void)argc; (void)argv;
+    spawn_counter++;
+    pcb_t* p = create_process(spawned_task, 1);
+    if (p) {
+        char buf[12];
+        vga_print_color("Spawned process with PID ", 0x0A);
+        sh_itoa(p->pid, buf); vga_print_color(buf, 0x0A);
+        vga_putchar('\n');
+    } else {
+        vga_print_color("Failed to spawn process (out of memory)\n", 0x0C);
+    }
+}
+
+/* ── thread: start a new kernel thread ──────────────────────────────────── */
+static void thread_task(void) {
+    pcb_t* me = get_current_process();
+    char buf[12];
+    uint32_t pid = me ? me->pid : 0;
+    for (int i = 0; i < 3; i++) {
+        vga_print_color("\n[kernel thread parent=", 0x0E);
+        sh_itoa(pid, buf); vga_print_color(buf, 0x0E);
+        vga_print_color(" tick ", 0x0E);
+        sh_itoa((uint32_t)i, buf); vga_print_color(buf, 0x0E);
+        vga_print_color("]", 0x0E);
+        volatile uint32_t j;
+        for (j = 0; j < 5000000; j++) __asm__ volatile("nop");
+    }
+    thread_exit();
+}
+
+static void cmd_thread(int argc, char** argv) {
+    (void)argc; (void)argv;
+    pcb_t* parent = get_current_process();
+    tcb_t* t = create_thread(parent, thread_task);
+    if (t) {
+        char buf[12];
+        vga_print_color("Started thread with TID ", 0x0A);
+        sh_itoa(t->tid, buf); vga_print_color(buf, 0x0A);
+        vga_putchar('\n');
+    } else {
+        vga_print_color("Failed to start thread (out of memory)\n", 0x0C);
+    }
+}
+
+/* ── exit: exit current shell session (halt) ─────────────────────────────── */
+static void cmd_exit(int argc, char** argv) {
+    (void)argc; (void)argv;
+    vga_print_color("Goodbye. System halting.\n", 0x0B);
+    __asm__ volatile("cli; hlt");
 }
 
 /* ── Command table ──────────────────────────────────────────────────────── */
@@ -212,12 +316,16 @@ static shell_cmd_t command_table[] = {
     { "help",    cmd_help    },
     { "clear",   cmd_clear   },
     { "echo",    cmd_echo    },
+    { "ls",      cmd_ls      },
     { "time",    cmd_time    },
     { "ps",      cmd_ps      },
     { "threads", cmd_threads },
     { "meminfo", cmd_meminfo },
+    { "spawn",   cmd_spawn   },
+    { "thread",  cmd_thread  },
     { "reboot",  cmd_reboot  },
     { "halt",    cmd_halt    },
+    { "exit",    cmd_exit    },
     { "about",   cmd_about   },
     { "banner",  cmd_banner  },
     { NULL,      NULL        }
@@ -269,7 +377,7 @@ void shell_run(void) {
     vga_print("Type 'help' to see all commands.\n\n");
     /* Print prompt */
     vga_print_color("user", 0x0A);
-    vga_print_color("@sora-os", 0x0B);
+    vga_print_color("@vamos-os", 0x0B);
     vga_print_color(" > ", 0x0E);
 
     for (;;) {
@@ -294,7 +402,7 @@ void shell_run(void) {
             pos = 0;
             /* Print prompt */
             vga_print_color("user", 0x0A);
-            vga_print_color("@sora-os", 0x0B);
+            vga_print_color("@vamos-os", 0x0B);
             vga_print_color(" > ", 0x0E);
         } else if (c == '\b') {
             if (pos > 0) { pos--; vga_putchar('\b'); }
