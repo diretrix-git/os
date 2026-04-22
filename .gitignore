@@ -18,7 +18,10 @@ tests/run_tests
 # Kiro internal files — not part of the project
 .kiro/
 
-# Old project files (kept locally for reference, not part of Sora OS)
+# Internal reference doc — not part of the repo
+OS_CONCEPTS.md
+
+# Old project files (kept locally for reference, not part of Vamos OS)
 boot/
 kernel/
 stage2.ld
