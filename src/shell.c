@@ -85,7 +85,7 @@ static void cmd_time(int argc, char** argv) {
     uint32_t hrs   = mins / 60;
     secs %= 60; mins %= 60;
 
-    char buf[8];
+    char buf[12];
     vga_print_color("Uptime: ", 0x0B);
     sh_itoa(hrs,  buf); vga_print(buf); vga_print("h ");
     sh_itoa(mins, buf); vga_print(buf); vga_print("m ");
@@ -171,9 +171,13 @@ static void cmd_killprocess(int argc, char** argv) {
     pcb_t* p = run_queue;
     while (p) {
         if (p->pid == target) {
-            /* Mark dead — scheduler will skip it, process_exit cleans up */
             p->state = PROCESS_DEAD;
-            vga_print_color("Process marked for deletion: pid=", 0x0A);
+            /* Remove from run queue and free stack via scheduler */
+            scheduler_dequeue(p);
+            pmm_free_page((void*)(uintptr_t)p->stack_base);
+            p->stack_base = 0;
+            p->pid = 0;
+            vga_print_color("Process deleted: pid=", 0x0A);
             char buf[12]; sh_itoa(target, buf);
             vga_print_color(buf, 0x0A); vga_putchar('\n');
             return;
@@ -286,28 +290,11 @@ static void cmd_ls(int argc, char** argv) {
 
 /* ── newprocess: create a real process visible in ps/ls ─────────────────── */
 
-/* A simple counter process — stays READY in the queue, visible in ps/ls */
+/* A background process — sits in run queue silently, visible in ps/ls */
 static void counter_process(void) {
-    pcb_t* me = get_current_process();
-    char buf[12];
-    uint32_t pid = me ? me->pid : 0;
-    uint32_t count = 0;
-
-    /* Run forever — stays in run queue, visible in ps and ls */
-    for (;;) {
-        count++;
-        /* Print every ~2 seconds worth of ticks */
-        if (count % 200 == 0) {
-            vga_print_color("\n[process pid=", 0x0D);
-            sh_itoa(pid, buf); vga_print_color(buf, 0x0D);
-            vga_print_color(" count=", 0x0D);
-            sh_itoa(count / 200, buf); vga_print_color(buf, 0x0D);
-            vga_print_color("]", 0x0D);
-        }
-        /* Yield by sleeping a bit */
-        volatile uint32_t j;
-        for (j = 0; j < 100000; j++) __asm__ volatile("nop");
-    }
+    /* Idle loop — stays READY, scheduler switches to it every 10ms */
+    volatile uint32_t i = 0;
+    for (;;) { i++; }
 }
 
 static void cmd_newprocess(int argc, char** argv) {
@@ -315,10 +302,11 @@ static void cmd_newprocess(int argc, char** argv) {
     pcb_t* p = create_process(counter_process, 1);
     if (p) {
         char buf[12];
-        vga_print_color("Created process PID=", 0x0A);
+        vga_print_color("Process created  PID=", 0x0A);
         sh_itoa(p->pid, buf); vga_print_color(buf, 0x0A);
-        vga_print_color(" — now visible in 'ps' and 'ls'\n", 0x07);
-        vga_print_color("Use 'killprocess ", 0x08);
+        vga_print_color("  STATE=READY\n", 0x07);
+        vga_print_color("Run 'ps' or 'ls' to see it.\n", 0x08);
+        vga_print_color("Run 'killprocess ", 0x08);
         sh_itoa(p->pid, buf); vga_print_color(buf, 0x08);
         vga_print_color("' to remove it.\n", 0x08);
     } else {
@@ -328,24 +316,9 @@ static void cmd_newprocess(int argc, char** argv) {
 
 /* ── thread: start a new kernel thread ──────────────────────────────────── */
 static void thread_task(void) {
-    pcb_t* me = get_current_process();
-    char buf[12];
-    uint32_t pid = me ? me->pid : 0;
-    uint32_t count = 0;
-
-    /* Run forever — stays in run queue, visible in ls */
-    for (;;) {
-        count++;
-        if (count % 200 == 0) {
-            vga_print_color("\n[thread parent=", 0x0E);
-            sh_itoa(pid, buf); vga_print_color(buf, 0x0E);
-            vga_print_color(" count=", 0x0E);
-            sh_itoa(count / 200, buf); vga_print_color(buf, 0x0E);
-            vga_print_color("]", 0x0E);
-        }
-        volatile uint32_t j;
-        for (j = 0; j < 100000; j++) __asm__ volatile("nop");
-    }
+    /* Silent background thread — stays in run queue, visible in ls */
+    volatile uint32_t i = 0;
+    for (;;) { i++; }
 }
 
 static void cmd_thread(int argc, char** argv) {
@@ -354,10 +327,11 @@ static void cmd_thread(int argc, char** argv) {
     tcb_t* t = create_thread(parent, thread_task);
     if (t) {
         char buf[12];
-        vga_print_color("Created thread TID=", 0x0A);
+        vga_print_color("Thread created  TID=", 0x0A);
         sh_itoa(t->tid, buf); vga_print_color(buf, 0x0A);
-        vga_print_color(" — visible in 'ls'\n", 0x07);
-        vga_print_color("Use 'killthread ", 0x08);
+        vga_print_color("  STATE=READY\n", 0x07);
+        vga_print_color("Run 'ls' to see it.\n", 0x08);
+        vga_print_color("Run 'killthread ", 0x08);
         sh_itoa(t->tid, buf); vga_print_color(buf, 0x08);
         vga_print_color("' to remove it.\n", 0x08);
     } else {

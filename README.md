@@ -122,8 +122,10 @@ i686-linux-gnu-gdb kernel.bin
 | `ps` | List running processes with state and priority |
 | `threads` | List kernel threads and their parent process |
 | `meminfo` | Show total, used, and free memory |
-| `spawn` | Start a new demo process (demonstrates multitasking) |
-| `thread` | Start a new kernel thread (demonstrates multithreading) |
+| `newprocess` | Create a new process — stays in run queue, visible in `ps`/`ls` |
+| `thread` | Create a new kernel thread — visible in `ls` |
+| `killprocess <pid>` | Delete a process by PID |
+| `killthread <tid>` | Delete a thread by TID |
 | `reboot` | Reboot via keyboard controller reset |
 | `exit` | Shut down Vamos OS |
 | `about` | About Vamos OS |
@@ -153,7 +155,7 @@ i686-linux-gnu-gdb kernel.bin
 | `src/mutex.c` | `mutex_lock()`/`mutex_unlock()` using x86 `XCHG` (atomic test-and-set) |
 | `include/thread.h` | Defines `tcb_t` (Thread Control Block) with its own `esp`, `stack_base`, parent PCB |
 
-Run `thread` in the shell to start a kernel thread and see it execute alongside the shell.
+Run `thread` in the shell to start a kernel thread and see it execute alongside the shell. Use `killthread <tid>` to remove it.
 
 ### 3. CPU Scheduling
 **Yes — implemented.** Preemptive round-robin scheduling driven by the PIT timer at 100 Hz.
@@ -174,7 +176,7 @@ Every 10ms the CPU is interrupted, the current process is paused, and the next o
 | `src/scheduler.c` | `create_process()` sets up a PCB with its own stack (allocated via PMM) |
 | `src/kernel_main.c` | Boot screen, init sequence, and shell all run as the main kernel task |
 
-Up to 64 processes can be in the run queue simultaneously. Run `spawn` in the shell to create a new process and watch it run alongside the shell.
+Run `newprocess` in the shell to create a new process and watch it run alongside the shell. Use `killprocess <pid>` to remove it.
 
 ### 5. Memory Management
 **Yes — implemented.** Manual bitmap-based physical page allocator, no dynamic heap.
