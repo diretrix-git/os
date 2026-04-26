@@ -55,7 +55,6 @@ static void cmd_help(int argc, char** argv) {
     vga_print_color("  newprocess        ", 0x0E); vga_print("Create a new process (visible in ps/ls)\n");
     vga_print_color("  thread            ", 0x0E); vga_print("Create a new kernel thread (visible in ls)\n");
     vga_print_color("  killprocess <pid> ", 0x0E); vga_print("Delete a process by PID\n");
-    vga_print_color("  killthread <tid>  ", 0x0E); vga_print("Delete a thread by TID\n");
     vga_print_color("  reboot            ", 0x0E); vga_print("Reboot the system\n");
     vga_print_color("  exit              ", 0x0E); vga_print("Shut down Vamos OS\n");
     vga_print_color("  about             ", 0x0E); vga_print("About Vamos OS\n");
@@ -188,23 +187,6 @@ static void cmd_killprocess(int argc, char** argv) {
     char buf[12]; sh_itoa(target, buf); vga_print(buf); vga_putchar('\n');
 }
 
-/* ── killthread: delete a thread by TID ─────────────────────────────────── */
-static void cmd_killthread(int argc, char** argv) {
-    if (argc < 2) { vga_print("Usage: killthread <tid>\n"); return; }
-    uint32_t target = 0;
-    const char* s = argv[1];
-    while (*s >= '0' && *s <= '9') target = target * 10 + (uint32_t)(*s++ - '0');
-
-    if (thread_delete(target)) {
-        vga_print_color("Thread deleted: tid=", 0x0A);
-        char buf[12]; sh_itoa(target, buf);
-        vga_print_color(buf, 0x0A); vga_putchar('\n');
-    } else {
-        vga_print("No such thread: ");
-        char buf[12]; sh_itoa(target, buf); vga_print(buf); vga_putchar('\n');
-    }
-}
-
 static void cmd_reboot(int argc, char** argv) {
     (void)argc; (void)argv;
     vga_print_color("Rebooting...\n", 0x0C);
@@ -290,11 +272,13 @@ static void cmd_ls(int argc, char** argv) {
 
 /* ── newprocess: create a real process visible in ps/ls ─────────────────── */
 
-/* A background process — sits in run queue silently, visible in ps/ls */
+/* A background process — yields every tick so shell stays responsive */
 static void counter_process(void) {
-    /* Idle loop — stays READY, scheduler switches to it every 10ms */
-    volatile uint32_t i = 0;
-    for (;;) { i++; }
+    for (;;) {
+        /* Enable interrupts and halt — wakes on next timer tick (10ms)
+         * then immediately yields back via schedule() in timer_handler */
+        __asm__ volatile("sti; hlt");
+    }
 }
 
 static void cmd_newprocess(int argc, char** argv) {
@@ -305,10 +289,10 @@ static void cmd_newprocess(int argc, char** argv) {
         vga_print_color("Process created  PID=", 0x0A);
         sh_itoa(p->pid, buf); vga_print_color(buf, 0x0A);
         vga_print_color("  STATE=READY\n", 0x07);
-        vga_print_color("Run 'ps' or 'ls' to see it.\n", 0x08);
-        vga_print_color("Run 'killprocess ", 0x08);
+        vga_print_color("Run 'ps' or 'ls' to see it.  ", 0x08);
+        vga_print_color("killprocess ", 0x08);
         sh_itoa(p->pid, buf); vga_print_color(buf, 0x08);
-        vga_print_color("' to remove it.\n", 0x08);
+        vga_print_color(" to remove.\n", 0x08);
     } else {
         vga_print_color("Failed: out of memory or process pool full\n", 0x0C);
     }
@@ -316,9 +300,9 @@ static void cmd_newprocess(int argc, char** argv) {
 
 /* ── thread: start a new kernel thread ──────────────────────────────────── */
 static void thread_task(void) {
-    /* Silent background thread — stays in run queue, visible in ls */
-    volatile uint32_t i = 0;
-    for (;;) { i++; }
+    for (;;) {
+        __asm__ volatile("sti; hlt");
+    }
 }
 
 static void cmd_thread(int argc, char** argv) {
@@ -378,7 +362,6 @@ static shell_cmd_t command_table[] = {
     { "newprocess",  cmd_newprocess  },
     { "thread",      cmd_thread      },
     { "killprocess", cmd_killprocess },
-    { "killthread",  cmd_killthread  },
     { "reboot",  cmd_reboot    },
     { "exit",    cmd_exit       },
     { "about",   cmd_about      },
